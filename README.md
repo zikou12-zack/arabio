@@ -1,4 +1,6 @@
-# 🌙 Arabio — v1.1.0
+# 🌙 Arabio — v1.2.0
+
+**New in 1.2.0: 25 lists.** 🔥 Trending today (movies and series, Top 10, Arabic titles), 🏆 Top 10 Arabic series and movies right now, 📺 Arabic series airing this week, 📅 Arabic series of this year, ⭐ top-rated Arabic series and movies, 😂 Egyptian comedy, 🎞️ Egyptian cinema classics (before 1990), Gulf movies, 🇲🇦 Moroccan series and movies, and 🏆 Top 10 Turkish series, alongside the earlier lists. Top 10 rows have exactly 10 titles. In Nuvio you can hide or reorder rows in the Home settings.
 
 **New in 1.1.0: official YouTube uploads.** Add `YOUTUBE_API_KEY` and Arabio shows full Arabic movies and series episodes that production companies and TV channels have uploaded to YouTube, as ▶️ YouTube streams in Nuvio. Only Arabic-language titles are searched. Each result must name the title, the right episode and season, and be long enough (15+ minutes for episodes, 60+ for movies), so trailers, recaps and other episodes are left out. Answers are cached for a day: the free YouTube quota allows about 100 new searches a day.
 

@@ -3,7 +3,7 @@
 // Arabic titles, plots, cast and episode names, and Arabic search, from TMDB.
 // Titles use IMDb ids when TMDB has one, so stream addons such as Cinevo work.
 
-const VERSION='1.1.0';
+const VERSION='1.2.0';
 // Accepts the v3 API key or the v4 read token, with or without "Bearer ", quotes or spaces.
 const TMDB_KEY=String(process.env.TMDB_API_KEY||process.env.TMDB_KEY||'').trim().replace(/^["']|["']$/g,'').replace(/^Bearer\s+/i,'').trim();
 const TMDB='https://api.themoviedb.org/3';
@@ -86,17 +86,35 @@ function ramadanWindow(now=new Date()){
   return {'first_air_date.gte':iso(new Date(s.getTime()-10*86400000)),'first_air_date.lte':iso(new Date(s.getTime()+20*86400000)),year:start.slice(0,4)};
 }
 const GULF='SA|KW|AE|QA|BH|OM',LEVANT='SY|LB|JO|PS',MAGHREB='MA|DZ|TN|LY';
+const today=()=>new Date().toISOString().slice(0,10);
+const daysAgo=n=>new Date(Date.now()-n*86400000).toISOString().slice(0,10);
+const thisYear=()=>new Date().getUTCFullYear();
+// path: a TMDB list other than discover. limit: a fixed Top-N row (no paging, no genre filter).
 const CATALOGS=[
+  {id:'arabio.trending.movies',type:'movie',name:'🔥 الأكثر رواجاً اليوم: أفلام',path:'trending/movie/day',limit:10},
+  {id:'arabio.trending.series',type:'series',name:'🔥 الأكثر رواجاً اليوم: مسلسلات',path:'trending/tv/day',limit:10},
+  {id:'arabio.top10.series',type:'series',name:'🏆 أفضل 10 مسلسلات عربية الآن',limit:10,params:()=>({with_original_language:'ar','first_air_date.gte':daysAgo(3*365)})},
+  {id:'arabio.top10.movies',type:'movie',name:'🏆 أفضل 10 أفلام عربية الآن',limit:10,params:()=>({with_original_language:'ar','primary_release_date.gte':daysAgo(3*365)})},
+  {id:'arabio.airing',type:'series',name:'📺 تُعرض هذا الأسبوع',params:()=>({with_original_language:'ar','air_date.gte':daysAgo(7),'air_date.lte':today(),'vote_count.gte':0})},
   {id:'arabio.ramadan',type:'series',name:'🌙 مسلسلات رمضان',params:()=>{const w=ramadanWindow();delete w.year;return {with_original_language:'ar','vote_count.gte':0,...w};}},
+  {id:'arabio.year.series',type:'series',name:`📅 مسلسلات عربية ${thisYear()}`,params:()=>({with_original_language:'ar',first_air_date_year:thisYear(),'vote_count.gte':0})},
+  {id:'arabio.new.movies',type:'movie',name:'🆕 أحدث الأفلام العربية',params:()=>({with_original_language:'ar','vote_count.gte':0,sort_by:'primary_release_date.desc','primary_release_date.lte':today()})},
   {id:'arabio.series',type:'series',name:'مسلسلات عربية',params:()=>({with_original_language:'ar'})},
   {id:'arabio.movies',type:'movie',name:'أفلام عربية',params:()=>({with_original_language:'ar'})},
-  {id:'arabio.new.movies',type:'movie',name:'أحدث الأفلام العربية',params:()=>({with_original_language:'ar','vote_count.gte':0,sort_by:'primary_release_date.desc','primary_release_date.lte':new Date().toISOString().slice(0,10)})},
-  {id:'arabio.eg.series',type:'series',name:'مسلسلات مصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG'})},
-  {id:'arabio.eg.movies',type:'movie',name:'أفلام مصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG'})},
+  {id:'arabio.toprated.series',type:'series',name:'⭐ الأعلى تقييماً: مسلسلات عربية',params:()=>({with_original_language:'ar',sort_by:'vote_average.desc','vote_count.gte':30})},
+  {id:'arabio.toprated.movies',type:'movie',name:'⭐ الأعلى تقييماً: أفلام عربية',params:()=>({with_original_language:'ar',sort_by:'vote_average.desc','vote_count.gte':50})},
+  {id:'arabio.eg.series',type:'series',name:'🇪🇬 مسلسلات مصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG'})},
+  {id:'arabio.eg.movies',type:'movie',name:'🇪🇬 أفلام مصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG'})},
+  {id:'arabio.eg.comedy',type:'movie',name:'😂 كوميديا مصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG',with_genres:35})},
+  {id:'arabio.eg.classics',type:'movie',name:'🎞️ كلاسيكيات السينما المصرية',params:()=>({with_original_language:'ar',with_origin_country:'EG','primary_release_date.lte':'1989-12-31',sort_by:'vote_count.desc','vote_count.gte':5})},
   {id:'arabio.gulf.series',type:'series',name:'مسلسلات خليجية',params:()=>({with_original_language:'ar',with_origin_country:GULF})},
+  {id:'arabio.gulf.movies',type:'movie',name:'أفلام خليجية',params:()=>({with_original_language:'ar',with_origin_country:GULF})},
   {id:'arabio.levant.series',type:'series',name:'مسلسلات شامية',params:()=>({with_original_language:'ar',with_origin_country:LEVANT})},
+  {id:'arabio.ma.series',type:'series',name:'🇲🇦 مسلسلات مغربية',params:()=>({with_origin_country:'MA','vote_count.gte':0})},
+  {id:'arabio.ma.movies',type:'movie',name:'🇲🇦 أفلام مغربية',params:()=>({with_origin_country:'MA','vote_count.gte':0})},
   {id:'arabio.maghreb.series',type:'series',name:'مسلسلات مغاربية',params:()=>({with_origin_country:MAGHREB})},
   {id:'arabio.maghreb.movies',type:'movie',name:'أفلام مغاربية',params:()=>({with_origin_country:MAGHREB})},
+  {id:'arabio.top10.turkish',type:'series',name:'🏆 أفضل 10 مسلسلات تركية الآن',limit:10,params:()=>({with_original_language:'tr','first_air_date.gte':daysAgo(3*365)})},
   {id:'arabio.turkish.series',type:'series',name:'مسلسلات تركية',params:()=>({with_original_language:'tr'})},
   {id:'arabio.search.movie',type:'movie',name:'بحث أفلام',search:true},
   {id:'arabio.search.series',type:'series',name:'بحث مسلسلات',search:true}
@@ -127,19 +145,21 @@ async function catalog(type,id,extra){
   if(!def)return null;
   const skip=Math.max(0,Number(extra.skip)||0);
   const page=Math.floor(skip/PAGE)+1;
-  if(page>50)return [];
+  if(page>50||(def.limit&&skip>0))return [];
   let data;
   if(def.search){
     const q=String(extra.search||'').trim().slice(0,100);
     if(!q)return [];
     data=await tmdb(`search/${tmdbType(type)}`,{query:q,language:'ar',page,include_adult:'false'},3600000);
+  }else if(def.path){
+    data=await tmdb(def.path,{language:'ar'},3*3600000);
   }else{
     const params={language:'ar',sort_by:'popularity.desc',include_adult:'false','vote_count.gte':type==='movie'?3:1,page,...def.params()};
     const g=GENRES[type][extra.genre];
     if(g)params.with_genres=g;
     data=await tmdb(`discover/${tmdbType(type)}`,params);
   }
-  const results=(data?.results||[]).filter(r=>r.poster_path);
+  const results=(data?.results||[]).filter(r=>r.poster_path).slice(0,def.limit||PAGE);
   return mapLimit(results,10,async r=>{
     const imdb=await imdbFor(type,r.id);
     return {id:imdb||`tmdb:${r.id}`,...preview(type,r)};
@@ -292,6 +312,7 @@ const manifest={
   idPrefixes:META_FOR_ALL?['tt','tmdb:']:['tmdb:'],
   catalogs:CATALOGS.map(c=>c.search
     ?{type:c.type,id:c.id,name:c.name,extra:[{name:'search',isRequired:true},{name:'skip'}]}
+    :c.limit?{type:c.type,id:c.id,name:c.name,extra:[]}
     :{type:c.type,id:c.id,name:c.name,extra:[{name:'genre',options:Object.keys(GENRES[c.type])},{name:'skip'}],genres:Object.keys(GENRES[c.type])}),
   behaviorHints:{configurable:false}
 };
