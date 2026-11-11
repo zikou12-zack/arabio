@@ -1,4 +1,8 @@
-# 🌙 Arabio — v1.0.0
+# 🌙 Arabio — v1.1.0
+
+**New in 1.1.0: official YouTube uploads.** Add `YOUTUBE_API_KEY` and Arabio shows full Arabic movies and series episodes that production companies and TV channels have uploaded to YouTube, as ▶️ YouTube streams in Nuvio. Only Arabic-language titles are searched. Each result must name the title, the right episode and season, and be long enough (15+ minutes for episodes, 60+ for movies), so trailers, recaps and other episodes are left out. Answers are cached for a day: the free YouTube quota allows about 100 new searches a day.
+
+**New in 1.0.1:** `/health` tests your TMDB key live and explains any problem. The key is accepted with or without "Bearer ", quotes or spaces. Empty catalogs are no longer cached.
 
 Arabic metadata addon for Nuvio and Stremio, powered by TMDB.
 
@@ -22,6 +26,7 @@ Optional: connect a free Upstash Redis database (Vercel → Storage) to keep TMD
 | Name | Needed | Purpose |
 |---|---|---|
 | `TMDB_API_KEY` | yes | TMDB API key or read access token |
+| `YOUTUBE_API_KEY` | no | official YouTube uploads as streams (Google Cloud → YouTube Data API v3 → API key) |
 | `ARABIC_META_FOR_ALL` | no | `false` = Arabic details only for Arabio's own catalogs |
 | Upstash Redis variables | no | added automatically when you connect the database |
 

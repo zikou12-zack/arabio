@@ -3,8 +3,9 @@
 // Arabic titles, plots, cast and episode names, and Arabic search, from TMDB.
 // Titles use IMDb ids when TMDB has one, so stream addons such as Cinevo work.
 
-const VERSION='1.0.0';
-const TMDB_KEY=String(process.env.TMDB_API_KEY||'').trim();
+const VERSION='1.1.0';
+// Accepts the v3 API key or the v4 read token, with or without "Bearer ", quotes or spaces.
+const TMDB_KEY=String(process.env.TMDB_API_KEY||process.env.TMDB_KEY||'').trim().replace(/^["']|["']$/g,'').replace(/^Bearer\s+/i,'').trim();
 const TMDB='https://api.themoviedb.org/3';
 const IMG='https://image.tmdb.org/t/p/';
 // Give Arabic details for every IMDb title (also non-Arabic ones), not just Arabio's catalogs.
@@ -161,11 +162,12 @@ function pickLogo(d){
   const best=logos.find(l=>l.iso_639_1==='ar')||logos.find(l=>l.iso_639_1==='en')||logos[0];
   return best?img(best.file_path,'w500'):undefined;
 }
+const details=(kind,tid)=>tmdb(`${kind}/${tid}`,{language:'ar',append_to_response:'external_ids,credits,videos,images,translations',include_image_language:'ar,en,null',include_video_language:'ar,en'},24*3600000);
 async function meta(type,id){
   const tid=await findTmdb(type,id);
   if(!tid)return null;
   const kind=tmdbType(type);
-  const d=await tmdb(`${kind}/${tid}`,{language:'ar',append_to_response:'external_ids,credits,videos,images,translations',include_image_language:'ar,en,null',include_video_language:'ar,en'},24*3600000);
+  const d=await details(kind,tid);
   if(!d)return null;
   const en=englishOf(d);
   const imdb=/^tt\d+$/.test(d.external_ids?.imdb_id||'')?d.external_ids.imdb_id:'';
@@ -215,12 +217,77 @@ async function meta(type,id){
   return out;
 }
 
+// ---------- YouTube streams (official uploads of Arabic titles) ----------
+// Needs YOUTUBE_API_KEY. A search costs 100 of the 10,000 free daily units, so
+// answers are cached for a day and only Arabic-language titles are searched.
+const YT_KEY=String(process.env.YOUTUBE_API_KEY||'').trim().replace(/^["']|["']$/g,'');
+let ytPausedUntil=0;
+const arNorm=s=>String(s||'').toLowerCase().normalize('NFKC').replace(/[\u064B-\u065F\u0670\u0640]/g,'').replace(/[أإآٱ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^a-z0-9\u0621-\u064A]+/g,' ').trim();
+const ORDINAL={'الاول':1,'الثاني':2,'الثالث':3,'الرابع':4,'الخامس':5,'السادس':6,'السابع':7,'الثامن':8,'التاسع':9,'العاشر':10};
+function statedSeason(t){
+  const m=t.match(/(?:الموسم|الجزء|season|part)\s*(\d{1,2})(?!\d)/);if(m)return Number(m[1]);
+  const o=t.match(/(?:الموسم|الجزء)\s*(\S+)/);return o&&ORDINAL[o[1]]?ORDINAL[o[1]]:null;
+}
+function episodeOk(t,e){
+  const m=[...t.matchAll(/(?:^|\s)(?:الحلقه|حلقه|episode|ep|e)\s*(\d{1,4})(?!\d)/g)].map(x=>Number(x[1]));
+  return m.includes(e);
+}
+const isoMinutes=d=>{const m=String(d||'').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);return m?Number(m[1]||0)*60+Number(m[2]||0)+Number(m[3]||0)/60:0;};
+async function yt(path,params){
+  if(ytPausedUntil>Date.now())throw Error('YouTube daily quota used up');
+  const q=new URLSearchParams({...params,key:YT_KEY});
+  const ac=new AbortController();const t=setTimeout(()=>ac.abort(),5000);
+  try{
+    const r=await fetch(`https://www.googleapis.com/youtube/v3/${path}?${q}`,{signal:ac.signal});
+    if(r.status===403){const until=new Date();until.setUTCHours(24,5,0,0);ytPausedUntil=until.getTime();throw Error('YouTube quota or key problem (HTTP 403)');}
+    if(!r.ok)throw Error(`YouTube HTTP ${r.status}`);
+    return await r.json();
+  }finally{clearTimeout(t);}
+}
+async function youtubeStreams(type,rawId){
+  const m=/^(tt\d+|tmdb:\d+)(?::(\d+):(\d+))?$/.exec(rawId);if(!m)return [];
+  const season=Number(m[2]||0),episode=Number(m[3]||0);
+  if(type==='series'&&(!season||!episode))return [];
+  const tid=await findTmdb(type,m[1]);if(!tid)return [];
+  const d=await details(tmdbType(type),tid);
+  if(!d||d.original_language!=='ar')return [];
+  const arName=d.title||d.name||d.original_title||d.original_name;
+  const names=[arName,d.original_title||d.original_name,englishOf(d).title].map(arNorm).filter(n=>n.length>=3);
+  const q=type==='movie'?`فيلم ${arName} كامل`:`مسلسل ${arName} الحلقة ${episode}${season>1?` الموسم ${season}`:''}`;
+  return cached(`yt:${q}`,24*3600000,async()=>{
+    const found=await yt('search',{part:'snippet',type:'video',q,maxResults:'15',relevanceLanguage:'ar',videoDuration:'long',safeSearch:'none'});
+    const ids=(found?.items||[]).map(i=>i.id?.videoId).filter(Boolean);
+    if(!ids.length)return [];
+    const info=await yt('videos',{part:'snippet,contentDetails,statistics,status',id:ids.join(',')});
+    const out=[];
+    for(const v of info?.items||[]){
+      const t=arNorm(v.snippet?.title);
+      if(!names.some(n=>t.includes(n)))continue;
+      if(v.status?.embeddable===false)continue;
+      const mins=isoMinutes(v.contentDetails?.duration);
+      if(type==='movie'){if(mins<60)continue;if(/(?:الحلقه|حلقه|episode)\s*\d/.test(t))continue;}
+      else{
+        if(mins<15||!episodeOk(t,episode))continue;
+        const st=statedSeason(t);
+        if(st!==null&&st!==season)continue;
+        if(st===null&&season>1)continue;
+      }
+      out.push({id:v.id,title:v.snippet.title,channel:v.snippet.channelTitle,mins,views:Number(v.statistics?.viewCount)||0});
+    }
+    return out.sort((a,b)=>b.views-a.views).slice(0,4);
+  }).then(list=>list.map(v=>({
+    ytId:v.id,name:'▶️ YouTube',
+    title:`${v.title}\n📺 ${v.channel} · ⏱ ${Math.floor(v.mins/60)?`${Math.floor(v.mins/60)}h `:''}${Math.round(v.mins%60)}m · 👁 ${v.views>=1e6?(v.views/1e6).toFixed(1)+'M':v.views>=1e3?Math.round(v.views/1e3)+'K':v.views}`,
+    behaviorHints:{bingeGroup:'arabio-youtube'}
+  })));
+}
+
 // ---------- manifest ----------
 const manifest={
   id:'community.arabio',version:VERSION,name:'🌙 Arabio',
-  description:'Arabic metadata: Ramadan, Egyptian, Gulf, Levant, Maghreb and Turkish series and Arabic movies, with Arabic titles, plots, cast, episode names and search.',
+  description:(YT_KEY?'Official YouTube uploads of Arabic movies and series, plus ':'')+'Arabic metadata: Ramadan, Egyptian, Gulf, Levant, Maghreb and Turkish series and Arabic movies, with Arabic titles, plots, cast, episode names and search.',
   logo:'https://raw.githubusercontent.com/twitter/twemoji/master/assets/72x72/1f319.png',
-  resources:['catalog',{name:'meta',types:['movie','series'],idPrefixes:META_FOR_ALL?['tt','tmdb:']:['tmdb:']}],
+  resources:['catalog',{name:'meta',types:['movie','series'],idPrefixes:META_FOR_ALL?['tt','tmdb:']:['tmdb:']},...(YT_KEY?[{name:'stream',types:['movie','series'],idPrefixes:['tt','tmdb:']}]:[])],
   types:['movie','series'],
   idPrefixes:META_FOR_ALL?['tt','tmdb:']:['tmdb:'],
   catalogs:CATALOGS.map(c=>c.search
@@ -247,15 +314,34 @@ export default async function handler(req,res){
     res.setHeader('Content-Type','text/html; charset=utf-8');
     return res.status(200).send(page(/^[a-z0-9.-]+(?::\d+)?$/i.test(host)?host:'your-arabio.vercel.app'));
   }
-  if(path==='/health')return send(200,{ok:true,name:manifest.name,version:VERSION,tmdbKey:!!TMDB_KEY,region:process.env.VERCEL_REGION||'local',sharedCache:REDIS_URL&&REDIS_TOKEN?'on':'off',arabicMetaForAll:META_FOR_ALL});
+  if(path==='/health'){
+    // Live TMDB check, with a plain explanation when it fails.
+    let tmdbStatus='missing: add TMDB_API_KEY in Vercel → Settings → Environment Variables, then redeploy';
+    if(TMDB_KEY){
+      try{
+        const bearer=TMDB_KEY.startsWith('eyJ');
+        const r=await fetch(`${TMDB}/configuration${bearer?'':`?api_key=${encodeURIComponent(TMDB_KEY)}`}`,{headers:bearer?{authorization:`Bearer ${TMDB_KEY}`}:{}});
+        tmdbStatus=r.ok?'ok':r.status===401?'rejected: TMDB says this key is invalid (copy the API Key or the Read Access Token again)':`error: TMDB HTTP ${r.status}`;
+      }catch(e){tmdbStatus='unreachable: '+String(e.message||e).slice(0,60);}
+    }
+    return send(200,{ok:tmdbStatus==='ok',name:manifest.name,version:VERSION,tmdb:tmdbStatus,youtube:YT_KEY?(ytPausedUntil>Date.now()?'paused: daily quota used up or key problem':'on'):'off: add YOUTUBE_API_KEY to show official YouTube uploads',keyType:TMDB_KEY?(TMDB_KEY.startsWith('eyJ')?'read access token':'api key'):'none',region:process.env.VERCEL_REGION||'local',sharedCache:REDIS_URL&&REDIS_TOKEN?'on':'off',arabicMetaForAll:META_FOR_ALL});
+  }
   if(path==='/manifest.json')return send(200,manifest,3600);
   let m=/^\/catalog\/(movie|series)\/([^/]+?)(?:\/([^/]+))?\.json$/.exec(path);
   if(m){
     try{
       const metas=await catalog(m[1],decodeURIComponent(m[2]),parseExtra(m[3]));
       if(metas===null)return send(404,{error:'Unknown catalog'});
-      return send(200,{metas},m[2].includes('search')?3600:6*3600);
+      return send(200,{metas},metas.length?(m[2].includes('search')?3600:6*3600):0);
     }catch(e){console.warn('catalog_failed',String(e.message||e));return send(200,{metas:[]});}
+  }
+  m=/^\/stream\/(movie|series)\/([^/]+)\.json$/.exec(path);
+  if(m){
+    if(!YT_KEY)return send(200,{streams:[]});
+    try{
+      const streams=await youtubeStreams(m[1],decodeURIComponent(m[2]));
+      return send(200,{streams},streams.length?6*3600:3600);
+    }catch(e){console.warn('youtube_failed',String(e.message||e));return send(200,{streams:[]});}
   }
   m=/^\/meta\/(movie|series)\/([^/]+)\.json$/.exec(path);
   if(m){
