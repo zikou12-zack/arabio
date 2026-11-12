@@ -1,12 +1,7 @@
 {
-  "name": "cinevo-addon",
-  "version": "1.13.0",
+  "name": "arabio-addon",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "@vercel/functions": "^3.11.1"
-  }
+  "engines": { "node": ">=20" }
 }
